@@ -4,8 +4,8 @@
 1. Reviewed and organized the overall project proposal “Integrating ESM3 Structural Representation with Self-Play Reinforcement Learning” and its planned adaptation of the EvoPlay method based on the token space of ESM3.
 2. Dive deep into Wang et al. (2023) “Self-play reinforcement learning guides protein engineering” (EvoPlay), tried to understand its algorithmic framework, key formulas, and experimental workflow.
 3. Created and finalized a *Journal Club* PPT for next week’s group meeting, covering EvoPlay’s background, MCTS simulation details, policy-value network training, and its applications to GFP and PAB1 protein design.
-You can find the PPT at here: [EvoPlay_Journal_Club.pptx](<./weekly_report/week0_0505_0511/journal_club.pdf>)
-4. However, the paper focuses more on the experimental results and the application of EvoPlay to GFP and PAB1 protein design, rather than the algorithmic details.
+You can find the PPT at here: [EvoPlay_Journal_Club.pptx](<./journal_club.pdf>)
+1. However, the paper focuses more on the experimental results and the application of EvoPlay to GFP and PAB1 protein design, rather than the algorithmic details.
 We have tried to understand the algorithmic details of EvoPlay, but for a full understanding of the MCTS algorithm, we might need to read the original paper of AlphaZero.
 We plan to have a quick overview the AlphaZero paper next week.
 
