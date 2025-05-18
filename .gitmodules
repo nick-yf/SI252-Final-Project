@@ -1,0 +1,6 @@
+[submodule "code/evoplay"]
+	path = code/evoplay
+	url = git@github.com:melobio/EvoPlay.git
+[submodule "code/esm"]
+	path = code/esm
+	url = git@github.com:evolutionaryscale/esm.git
