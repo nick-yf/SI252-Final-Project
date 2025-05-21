@@ -4,7 +4,10 @@ import numpy as np
 import copy
 import time
 import torch
+
 AAS = "ARNDCQEGHILKMFPSTWYV"
+
+
 def one_hot_to_string(
     one_hot: Union[List[List[int]], np.ndarray], alphabet: str
 ) -> str:
@@ -15,10 +18,12 @@ def one_hot_to_string(
     residue_idxs = np.argmax(one_hot, axis=1)
     return "".join([alphabet[idx] for idx in residue_idxs])
 
+
 def softmax(x):
     probs = np.exp(x - np.max(x))
     probs /= np.sum(probs)
     return probs
+
 
 class TreeNode(object):
     """A node in the MCTS tree.
@@ -26,7 +31,6 @@ class TreeNode(object):
     Each node keeps track of its own value Q, prior probability P, and
     its visit-count-adjusted prior score u.
     """
-
     def __init__(self, parent, prior_p):
         self._parent = parent
         self._children = {}  # a map from action to TreeNode
@@ -49,8 +53,10 @@ class TreeNode(object):
         plus bonus u(P).
         Return: A tuple of (action, next_node)
         """
-        return max(self._children.items(),
-                   key=lambda act_node: act_node[1].get_value(c_puct))
+        return max(
+            self._children.items(),
+            key=lambda act_node: act_node[1].get_value(c_puct)
+        )
 
     def update(self, leaf_value):
         """Update node values from leaf evaluation.
@@ -60,7 +66,7 @@ class TreeNode(object):
         # Count visit.
         self._n_visits += 1
         # Update Q, a running average of values for all visits.
-        self._Q += 1.0*(leaf_value - self._Q) / self._n_visits
+        self._Q += 1.0 * (leaf_value - self._Q) / self._n_visits
 
     def update_recursive(self, leaf_value):
         """Like a call to update(), but applied recursively for all ancestors.
@@ -77,8 +83,10 @@ class TreeNode(object):
         c_puct: a number in (0, inf) controlling the relative impact of
             value Q, and prior probability P, on this node's score.
         """
-        self._u = (c_puct * self._P *
-                   np.sqrt(self._parent._n_visits) / (1 + self._n_visits))
+        self._u = (
+            c_puct * self._P * np.sqrt(self._parent._n_visits) /
+            (1 + self._n_visits)
+        )
         return self._Q + self._u
 
     def is_leaf(self):
@@ -91,9 +99,8 @@ class TreeNode(object):
 
 class MCTS(object):
     """An implementation of Monte Carlo Tree Search."""
-
     def __init__(self, policy_value_fn, c_puct=5, n_playout=10000):
-        
+
         self._root = TreeNode(None, 1.0)
         self._policy = policy_value_fn
         self._c_puct = c_puct
@@ -108,7 +115,7 @@ class MCTS(object):
         playout_seqs = []
         playout_fit = []
         state.playout_dict.update(mp_dict)
-        while(1):
+        while (1):
             if node.is_leaf():
                 break
             # Greedily select next move.
@@ -125,7 +132,7 @@ class MCTS(object):
         if not end:
             node.expand(action_probs)
         else:
-            
+
             leaf_value = state._state_fitness
 
         # Update value and visit count of nodes in this traversal.
@@ -152,15 +159,15 @@ class MCTS(object):
             play_fit_list.extend(play_fit)
             g_m_p_dict.update(mp_dict)
 
-
         # calc the move probabilities based on visit counts at the root node
-        act_visits = [(act, node._n_visits)
-                      for act, node in self._root._children.items()]
+        act_visits = [
+            (act, node._n_visits) for act, node in self._root._children.items()
+        ]
 
         if not act_visits:
             return [], []
         acts, visits = zip(*act_visits)
-        act_probs = softmax(1.0/temp * np.log(np.array(visits) + 1e-10))
+        act_probs = softmax(1.0 / temp * np.log(np.array(visits) + 1e-10))
 
         return acts, act_probs, play_seq_list, play_fit_list, g_m_p_dict
 
@@ -180,9 +187,9 @@ class MCTS(object):
 
 class MCTSMutater(object):
     """AI mutater based on MCTS"""
-
-    def __init__(self, policy_value_function,
-                 c_puct=5, n_playout=2000, is_selfplay=0):
+    def __init__(
+        self, policy_value_function, c_puct=5, n_playout=2000, is_selfplay=0
+    ):
         self.mcts = MCTS(policy_value_function, c_puct, n_playout)
         self._is_selfplay = is_selfplay
         self.m_p_dict = {}
@@ -196,7 +203,7 @@ class MCTSMutater(object):
     def get_action(self, Seq_env, temp=1e-3, return_prob=0):
         #sensible_moves = Seq_env.availables
         # the pi vector returned by MCTS as in the alphaGo Zero paper
-        move_probs = np.zeros(Seq_env.seq_len*Seq_env.vocab_size)
+        move_probs = np.zeros(Seq_env.seq_len * Seq_env.vocab_size)
 
         get_move_mp_dict = copy.deepcopy(self.m_p_dict)
         acts, probs, play_seqs, play_fitness, m_p_dict = self.mcts.get_move_probs(Seq_env, get_move_mp_dict, temp) #
@@ -209,26 +216,27 @@ class MCTSMutater(object):
                 # self-play training)
                 move = np.random.choice(
                     acts,
-                    p=0.75*probs + 0.25*np.random.dirichlet(0.03*np.ones(len(probs))) # 0.3 , 0.03
+                    p=0.75 * probs +
+                    0.25 * np.random.dirichlet(0.03 * np.ones(len(probs))
+                                              )  # 0.3 , 0.03
                 )
                 # update the root node and reuse the search tree
                 self.mcts.update_with_move(move)
-                print("AI move: %d\n" % (move))
+                print("AI move: %d" % (move))
             else:
                 # with the default temp=1e-3, it is almost equivalent
                 # to choosing the move with the highest prob
                 move = np.random.choice(acts, p=probs)
                 # reset the root node
                 self.mcts.update_with_move(-1)
-                print("AI move: %d\n" % (move))
+                print("AI move: %d" % (move))
 
             if return_prob:
-                return move, move_probs, play_seqs, play_fitness#, m_p_dict
+                return move, move_probs, play_seqs, play_fitness  #, m_p_dict
             else:
-                return move, play_seqs, play_fitness#, m_p_dict
+                return move, play_seqs, play_fitness  #, m_p_dict
         else:
-            return [],[], play_seqs, play_fitness#, m_p_dict
-
+            return [], [], play_seqs, play_fitness  #, m_p_dict
 
     def __str__(self):
         return "MCTS {}".format(self.player)

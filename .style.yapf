@@ -1,0 +1,5 @@
+[style]
+based_on_style = google
+split_all_top_level_comma_separated_values = true
+dedent_closing_brackets = true
+blank_line_before_nested_class_or_def = false

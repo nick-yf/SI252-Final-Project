@@ -27,11 +27,12 @@ class Net(nn.Module):
         self.conv3 = nn.Conv1d(64, 128, kernel_size=5, padding=2)
         # action policy layers
         self.act_conv1 = nn.Conv1d(128, 80, kernel_size=5, padding=2)
-        self.act_fc1 = nn.Linear(4*board_width*board_height,
-                                 board_width*board_height)
+        self.act_fc1 = nn.Linear(
+            4 * board_width * board_height, board_width * board_height
+        )
         # state value layers
         self.val_conv1 = nn.Conv1d(128, 20, kernel_size=5, padding=2)
-        self.val_fc1 = nn.Linear(board_width*board_height, 128)
+        self.val_fc1 = nn.Linear(board_width * board_height, 128)
         self.val_fc2 = nn.Linear(128, 1)
 
     def forward(self, state_input):
@@ -41,11 +42,11 @@ class Net(nn.Module):
         x = F.relu(self.conv3(x))
         # action policy layers
         x_act = F.relu(self.act_conv1(x))
-        x_act = x_act.view(-1, 4*self.board_width*self.board_height)
-        x_act = F.log_softmax(self.act_fc1(x_act))
+        x_act = x_act.view(-1, 4 * self.board_width * self.board_height)
+        x_act = F.log_softmax(self.act_fc1(x_act), dim=-1)
         # state value layers
         x_val = F.relu(self.val_conv1(x))
-        x_val = x_val.view(-1, self.board_width*self.board_height)
+        x_val = x_val.view(-1, self.board_width * self.board_height)
         x_val = F.relu(self.val_fc1(x_val))
         x_val = F.tanh(self.val_fc2(x_val))
         return x_act, x_val
@@ -53,8 +54,9 @@ class Net(nn.Module):
 
 class PolicyValueNet():
     """policy-value network """
-    def __init__(self, board_width, board_height,
-                 model_file=None, use_gpu=False):
+    def __init__(
+        self, board_width, board_height, model_file=None, use_gpu=False
+    ):
         self.use_gpu = use_gpu
         self.board_width = board_width
         self.board_height = board_height
@@ -64,8 +66,9 @@ class PolicyValueNet():
             self.policy_value_net = Net(board_width, board_height).cuda()
         else:
             self.policy_value_net = Net(board_width, board_height)
-        self.optimizer = optim.Adam(self.policy_value_net.parameters(),
-                                    weight_decay=self.l2_const)
+        self.optimizer = optim.Adam(
+            self.policy_value_net.parameters(), weight_decay=self.l2_const
+        )
 
         if model_file:
             net_params = torch.load(model_file)
@@ -94,7 +97,7 @@ class PolicyValueNet():
         action and the score of the board state
         """
         legal_positions = board.availables
-        current_state_0 = np.expand_dims(board.current_state(), axis = 0)
+        current_state_0 = np.expand_dims(board.current_state(), axis=0)
         current_state = np.ascontiguousarray(current_state_0)  ##
 
         if self.use_gpu:
@@ -129,15 +132,15 @@ class PolicyValueNet():
         # forward
         log_act_probs, value = self.policy_value_net(state_batch)
         value_loss = F.mse_loss(value.view(-1), winner_batch)
-        policy_loss = -torch.mean(torch.sum(mcts_probs*log_act_probs, 1))
+        policy_loss = -torch.mean(torch.sum(mcts_probs * log_act_probs, 1))
         loss = value_loss + policy_loss
         # backward and optimize
         loss.backward()
         self.optimizer.step()
         # calc policy entropy, for monitoring only
         entropy = -torch.mean(
-                torch.sum(torch.exp(log_act_probs) * log_act_probs, 1)
-                )
+            torch.sum(torch.exp(log_act_probs) * log_act_probs, 1)
+        )
 
         return loss.item(), entropy.item()
 
