@@ -52,6 +52,7 @@ class Seq_env(object):
         self,
         seq_len,
         alphabet,
+        feature_extractor,
         model,
         starting_seq,
         trust_radus,
@@ -66,6 +67,7 @@ class Seq_env(object):
         )  #self.height = int(kwargs.get('height', 8))
 
         self.alphabet = alphabet
+        self.feature_extractor = feature_extractor
         self.model = model
         self.starting_seq = starting_seq
         self.seq = starting_seq
@@ -88,7 +90,6 @@ class Seq_env(object):
         #playout
         self.start_seq_exclude_list = []
         self.playout_dict = {}
-
         self.model.eval()
 
     def init_seq_state(self):  #start_player=0
@@ -112,7 +113,8 @@ class Seq_env(object):
             inputs = one_hots
             inputs = inputs.permute(0, 2, 1)
 
-            outputs = self.model(inputs)
+            features = self.feature_extractor(inputs.cuda()).mean(1)
+            outputs = self.model(features)
 
             outputs = outputs.squeeze()
         if outputs:
@@ -178,7 +180,8 @@ class Seq_env(object):
                         inputs = one_hots
                         inputs = inputs.permute(0, 2, 1)
 
-                        outputs = self.model(inputs)
+                        features = self.feature_extractor(inputs.cuda()).mean(1)
+                        outputs = self.model(features)
                         outputs = outputs.squeeze()
                     if outputs:
                         self._state_fitness = outputs
@@ -195,7 +198,8 @@ class Seq_env(object):
                         inputs = one_hots
                         inputs = inputs.permute(0, 2, 1)
 
-                        outputs = self.model(inputs)
+                        features = self.feature_extractor(inputs.cuda()).mean(1)
+                        outputs = self.model(features)
 
                         outputs = outputs.squeeze()
                     if outputs:
