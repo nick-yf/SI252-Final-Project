@@ -2,7 +2,8 @@
 
 ## Environment Setup
 ```shell
-conda create -n SI252_Final python -y
+conda create -n SI252_Final python
+conda activate SI252_Final
 cd code/esm
 pip install -e .
 cd ../..
