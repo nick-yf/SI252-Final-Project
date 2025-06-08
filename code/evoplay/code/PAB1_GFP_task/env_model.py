@@ -2,14 +2,14 @@
 import argparse
 
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
-import numpy as np
-import esm
 
-AAS = "ILVAGMFYWEDQNHCRKSTP"
+import esm
+from residue_constant import AAS
 
 
 def states_to_seqs(states):
@@ -138,11 +138,7 @@ class ESM_predictor(nn.Module):
         self.fc_module = nn.Sequential(
             nn.Linear(1280, 512),
             nn.ReLU(),
-            nn.Linear(512, 192),
-            nn.ReLU(),
-            # nn.Linear(256, 128),
-            # nn.ReLU(),
-            nn.Linear(192, 1),
+            nn.Linear(512, 1),
         )
 
     def forward(self, sequence_representations):

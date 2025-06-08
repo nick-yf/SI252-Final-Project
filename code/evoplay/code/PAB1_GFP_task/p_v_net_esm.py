@@ -29,29 +29,45 @@ class Net(nn.Module):
         self.board_height = board_height
 
         # action policy layers
-        self.act_module = nn.Sequential(
-            nn.Linear(
-                self.board_width * 1280, self.board_width * self.board_height
-            ),
-            nn.ReLU(),
-            nn.Linear(
-                self.board_width * self.board_height,
-                self.board_width * self.board_height
-            ),
+        # self.act_module = nn.Sequential(
+        #     nn.Linear(
+        #         self.board_width * 1280, self.board_width * self.board_height
+        #     ),
+        #     nn.ReLU(),
+        #     nn.Linear(
+        #         self.board_width * self.board_height,
+        #         self.board_width * self.board_height
+        #     ),
+        # )
+        self.act_fc1 = nn.Linear(1280, board_height * 4)
+        self.act_fc2 = nn.Linear(
+            board_width * board_height * 4, board_width * board_height
         )
         # state value layers
-        self.val_module = nn.Sequential(
-            nn.Linear(self.board_width * 1280, self.board_width * 64),
-            nn.ReLU(),
-            nn.Linear(self.board_width * 64, 1),
-        )
+        # self.val_module = nn.Sequential(
+        #     nn.Linear(self.board_width * 1280, self.board_width * 64),
+        #     nn.ReLU(),
+        #     nn.Linear(self.board_width * 64, 1),
+        # )
+        self.val_fc1 = nn.Linear(1280, board_height)
+        self.val_fc2 = nn.Linear(board_width * board_height, 128)
+        self.val_fc3 = nn.Linear(128, 1)
 
     def forward(self, token_representations):
         # action policy layers
-        x_act = self.act_module(token_representations)
+        # x_act = self.act_module(token_representations)
+        x_act = self.act_fc1(token_representations)
+        x_act = F.relu(x_act).view(-1, self.board_width * self.board_height * 4)
+        x_act = self.act_fc2(x_act)
         x_act = F.log_softmax(x_act, dim=-1)
         # state value layers
-        x_val = F.tanh(self.val_module(token_representations))
+        # x_val = F.tanh(self.val_module(token_representations))
+        x_val = self.val_fc1(token_representations)
+        x_val = F.relu(x_val).view(-1, self.board_width * self.board_height)
+        x_val = self.val_fc2(x_val)
+        x_val = F.relu(x_val)
+        x_val = self.val_fc3(x_val)
+        x_val = F.tanh(x_val)
         return x_act, x_val
 
 
@@ -93,21 +109,17 @@ class PolicyValueNet():
         output: a batch of action probabilities and state values
         """
         if self.use_gpu:
-            state_batch = Variable(torch.FloatTensor(state_batch).cuda())
-            features = self.feature_extractor(state_batch).view(
-                -1, self.board_width * 1280
-            )
+            state_batch = torch.tensor(state_batch).cuda().permute(0, 2, 1)
+            features = self.feature_extractor(state_batch)
             log_act_probs, value = self.policy_value_net(features)
-            act_probs = np.exp(log_act_probs.data.cpu().numpy())
-            return act_probs, value.data.cpu().numpy()
+            act_probs = torch.exp(log_act_probs)
+            return act_probs, value
         else:
-            state_batch = Variable(torch.FloatTensor(state_batch))
-            features = self.feature_extractor(state_batch).view(
-                -1, self.board_width * 1280
-            )
+            state_batch = torch.tensor(state_batch).permute(0, 2, 1)
+            features = self.feature_extractor(state_batch)
             log_act_probs, value = self.policy_value_net(features)
-            act_probs = np.exp(log_act_probs.data.numpy())
-            return act_probs, value.data.numpy()
+            act_probs = torch.exp(log_act_probs)
+            return act_probs, value
 
     def policy_value_fn(self, board):
         """
@@ -116,19 +128,20 @@ class PolicyValueNet():
         action and the score of the board state
         """
         legal_positions = board.availables
-        current_state_0 = np.expand_dims(board.current_state(), axis=0)
+        current_state_0 = np.expand_dims(board.current_state(),
+                                         axis=0).transpose(0, 2, 1)
         current_state = np.ascontiguousarray(current_state_0)  ##
 
         if self.use_gpu:
             features = self.feature_extractor(
                 Variable(torch.from_numpy(current_state)).cuda().float()
-            ).view(-1, self.board_width * 1280)
+            )
             log_act_probs, value = self.policy_value_net(features)
             act_probs = np.exp(log_act_probs.data.cpu().numpy().flatten())
         else:
             features = self.feature_extractor(
                 Variable(torch.from_numpy(current_state)).float()
-            ).view(-1, self.board_width * 1280)
+            )
             log_act_probs, value = self.policy_value_net(features)
             act_probs = np.exp(log_act_probs.data.numpy().flatten())
         act_probs = zip(legal_positions, act_probs[legal_positions])
@@ -139,13 +152,13 @@ class PolicyValueNet():
         """perform a training step"""
         # wrap in Variable
         if self.use_gpu:
-            state_batch = Variable(torch.FloatTensor(state_batch).cuda())
-            mcts_probs = Variable(torch.FloatTensor(mcts_probs).cuda())
-            winner_batch = Variable(torch.FloatTensor(winner_batch).cuda())
+            state_batch = torch.tensor(state_batch).cuda().permute(0, 2, 1)
+            mcts_probs = torch.tensor(mcts_probs).cuda()
+            winner_batch = torch.tensor(winner_batch).cuda()
         else:
-            state_batch = Variable(torch.FloatTensor(state_batch))
-            mcts_probs = Variable(torch.FloatTensor(mcts_probs))
-            winner_batch = Variable(torch.FloatTensor(winner_batch))
+            state_batch = torch.tensor(state_batch).permute(0, 2, 1)
+            mcts_probs = torch.tensor(mcts_probs)
+            winner_batch = torch.tensor(winner_batch)
 
         # zero the parameter gradients
         self.optimizer.zero_grad()
@@ -153,8 +166,7 @@ class PolicyValueNet():
         set_learning_rate(self.optimizer, lr)
 
         # forward
-        features = self.feature_extractor(state_batch
-                                         ).view(-1, self.board_width * 1280)
+        features = self.feature_extractor(state_batch)
         log_act_probs, value = self.policy_value_net(features)
         value_loss = F.mse_loss(value.view(-1), winner_batch)
         policy_loss = -torch.mean(torch.sum(mcts_probs * log_act_probs, 1))

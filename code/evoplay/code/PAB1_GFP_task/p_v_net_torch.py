@@ -37,30 +37,18 @@ class Net(nn.Module):
 
     def forward(self, state_input):
         # common layers
-        print(state_input.shape)
         x = F.relu(self.conv1(state_input))
-        print(x.shape)
         x = F.relu(self.conv2(x))
-        print(x.shape)
         x = F.relu(self.conv3(x))
-        print(x.shape)
         # action policy layers
         x_act = F.relu(self.act_conv1(x))
-        print("x_act.shape", x_act.shape)
         x_act = x_act.view(-1, 4 * self.board_width * self.board_height)
-        print("x_act.shape", x_act.shape)
         x_act = F.log_softmax(self.act_fc1(x_act), dim=-1)
-        print("x_act.shape", x_act.shape)
         # state value layers
         x_val = F.relu(self.val_conv1(x))
-        print("x_val.shape", x_val.shape)
         x_val = x_val.view(-1, self.board_width * self.board_height)
-        print("x_val.shape", x_val.shape)
         x_val = F.relu(self.val_fc1(x_val))
-        print("x_val.shape", x_val.shape)
         x_val = F.tanh(self.val_fc2(x_val))
-        print("x_val.shape", x_val.shape)
-        input("one forward in p_v_net")
         return x_act, x_val
 
 
@@ -92,15 +80,15 @@ class PolicyValueNet():
         output: a batch of action probabilities and state values
         """
         if self.use_gpu:
-            state_batch = Variable(torch.FloatTensor(state_batch).cuda())
+            state_batch = torch.tensor(state_batch).cuda()
             log_act_probs, value = self.policy_value_net(state_batch)
-            act_probs = np.exp(log_act_probs.data.cpu().numpy())
-            return act_probs, value.data.cpu().numpy()
+            act_probs = torch.exp(log_act_probs)
+            return act_probs, value
         else:
-            state_batch = Variable(torch.FloatTensor(state_batch))
+            state_batch = torch.tensor(state_batch)
             log_act_probs, value = self.policy_value_net(state_batch)
-            act_probs = np.exp(log_act_probs.data.numpy())
-            return act_probs, value.data.numpy()
+            act_probs = torch.exp(log_act_probs)
+            return act_probs, value
 
     def policy_value_fn(self, board):
         """

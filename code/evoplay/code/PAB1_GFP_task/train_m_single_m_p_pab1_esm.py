@@ -7,10 +7,8 @@ An implementation of the training pipeline of EvoPlay for PAB1 protein mutation
 
 from __future__ import print_function
 
-import os
 import sys
 import random
-import shutil
 import pathlib
 import datetime
 from typing import List, Union
@@ -24,8 +22,9 @@ import torch.optim as optim
 import torch.utils.data as data
 from torch.utils.data import DataLoader
 
-from env_model import CNN2
-from p_v_net_torch import PolicyValueNet  # Pytorch
+import esm
+from env_model import ESM_predictor
+from p_v_net_esm import PolicyValueNet  # Pytorch
 from residue_constant import AAS
 from sequence_env_m_p import Seq_env, Mutate
 from mcts_alphaZero_mutate_expand_m_p_gfp import MCTSMutater
@@ -63,22 +62,22 @@ def raw_to_features(data_dir):
     return one_hots, labels
 
 
-def train_surrogate_predictor(data_dir, retrain=False):
+def train_surrogate_predictor(data_dir, feature_extractor, retrain=False):
     print("training score predictor")
     one_hots, labels = raw_to_features(data_dir)
     seq_dataset = MyDataset(one_hots, labels)
-    epochs = 50
-    train_loader = DataLoader(seq_dataset, batch_size=128, shuffle=True)
+    epochs = 5
+    train_loader = DataLoader(seq_dataset, batch_size=512, shuffle=True)
 
-    model = CNN2(
+    model = ESM_predictor(
         len(pab1_wt_sequence),
         len(AAS),
     ).cuda()
-    if pathlib.Path('out/PAB1_GFP_task/PAB1/surrogate_predictor_cnn2.pth'
+    if pathlib.Path('out/PAB1_GFP_task/PAB1/surrogate_predictor_esm.pth'
                    ).exists():
         print("Loading existing surrogate predictor model...")
         model.load_state_dict(
-            torch.load('out/PAB1_GFP_task/PAB1/surrogate_predictor_cnn2.pth')
+            torch.load('out/PAB1_GFP_task/PAB1/surrogate_predictor_esm.pth')
         )
         print("Model loaded successfully.")
     if retrain:
@@ -94,7 +93,9 @@ def train_surrogate_predictor(data_dir, retrain=False):
                 labels = batch[1].cuda()
                 optimizer.zero_grad()
 
-                logits = model(inputs.permute(0, 2, 1))
+                features = feature_extractor(inputs)
+                features = features.mean(1)
+                logits = model(features)
                 loss = F.mse_loss(logits, labels)
                 loss.backward()
                 optimizer.step()
@@ -103,7 +104,7 @@ def train_surrogate_predictor(data_dir, retrain=False):
                     ).mkdir(parents=True, exist_ok=True)
         torch.save(
             model.state_dict(),
-            "out/PAB1_GFP_task/PAB1/surrogate_predictor_cnn2.pth"
+            "out/PAB1_GFP_task/PAB1/surrogate_predictor_esm.pth"
         )
         print("Surrogate predictor trained and saved.")
     torch.cuda.empty_cache()
@@ -129,6 +130,34 @@ def one_hot_to_string(
     return "".join([alphabet[idx] for idx in residue_idxs])
 
 
+class FeatureExtracter(torch.nn.Module):
+    def __init__(self):
+        super(FeatureExtracter, self).__init__()
+        print("Loading ESM2 model...")
+        self.esm_model, self.alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+        self.batch_converter = self.alphabet.get_batch_converter()
+        self.esm_model.eval()
+        self.esm_model.requires_grad_(False)
+        print("ESM2 model loaded.")
+
+    def _states_to_seqs(self, states):
+        return ''.join([AAS[i] for i in torch.argmax(states, dim=-1).tolist()])
+
+    def forward(self, state_input):
+        data = [
+            ("seq", self._states_to_seqs(state_input_one))
+            for state_input_one in state_input
+        ]
+        _, _, batch_tokens = self.batch_converter(data)
+        with torch.no_grad():
+            results = self.esm_model(
+                batch_tokens.cuda(), repr_layers=[33], return_contacts=False
+            )
+            token_representations = results["representations"][
+                33][:, 1:-1, :].clone().detach()
+        return token_representations
+
+
 class MyDataset(data.Dataset):
     def __init__(self, sequences, labels):
         self.sequences = sequences
@@ -148,6 +177,7 @@ class TrainPipeline():
         start_seq,
         alphabet,
         model,
+        feature_extractor,
         trust_radius,
         init_model=None
     ):  #init_model=None
@@ -155,23 +185,28 @@ class TrainPipeline():
         self.vocab_size = len(alphabet)
         self.n_in_row = 4
         self.seq_env = Seq_env(
-            self.seq_len, alphabet, None, model, start_seq, trust_radius
+            self.seq_len,
+            alphabet,
+            feature_extractor,
+            model,
+            start_seq,
+            trust_radius
         )  # n_in_row=self.n_in_row
         self.mutate = Mutate(self.seq_env)
         # training params
         self.learn_rate = 2e-3
         self.lr_multiplier = 1.0  # adaptively adjust the learning rate based on KL
-        self.temp = 1e-1  # the temperature param
+        self.temp = 1.0  # the temperature param
         self.n_playout = 64  # num of simulations for each move 400 1600
         self.c_puct = 10  #0.5  # 10
         self.buffer_size = 10000
         self.batch_size = 32  # mini-batch size for training  512
         self.data_buffer = deque(maxlen=self.buffer_size)
         self.play_batch_size = 1
-        self.epochs = 5  # num of train_steps for each update
+        self.epochs = 10  # num of train_steps for each update
         self.kl_targ = 0.02
         self.check_freq = 50
-        self.game_batch_num = 50
+        self.game_batch_num = 64
         self.best_win_ratio = 0.0
         # num of simulations used for the pure mcts, which is used as
         # the opponent to evaluate the trained policy
@@ -192,13 +227,14 @@ class TrainPipeline():
             self.policy_value_net = PolicyValueNet(
                 self.seq_len,
                 self.vocab_size,
+                feature_extractor,
                 model_file=init_model,
                 use_gpu=True
             )
         else:
             # start training from a new policy-value net
             self.policy_value_net = PolicyValueNet(
-                self.seq_len, self.vocab_size, use_gpu=True
+                self.seq_len, self.vocab_size, feature_extractor, use_gpu=True
             )
         self.mcts_player = MCTSMutater(
             self.policy_value_net.policy_value_fn,
@@ -237,12 +273,12 @@ class TrainPipeline():
 
     def policy_update(self):
         """update the policy-value net"""
-        mini_batch = random.choices(self.data_buffer, k=self.batch_size)
-        state_batch = [data[0] for data in mini_batch]
-        mcts_probs_batch = [data[1] for data in mini_batch]
-        winner_batch = [data[2] for data in mini_batch]
-        old_probs, old_v = self.policy_value_net.policy_value(state_batch)
         for i in range(self.epochs):
+            mini_batch = random.sample(self.data_buffer, k=self.batch_size)
+            state_batch = [data[0] for data in mini_batch]
+            mcts_probs_batch = [data[1] for data in mini_batch]
+            winner_batch = [data[2] for data in mini_batch]
+            old_probs, old_v = self.policy_value_net.policy_value(state_batch)
             loss, entropy = self.policy_value_net.train_step(
                 state_batch, mcts_probs_batch, winner_batch,
                 self.learn_rate * self.lr_multiplier)
@@ -305,13 +341,11 @@ class TrainPipeline():
                 # if (i + 1) % 16 == 0:
                 #     print('train predictor again')
                 #     update_model = train_surrogate_predictor(
-                #         data_path, retrain=False
+                #         data_path, feature_extractor, retrain=False
                 #     )
                 #     self.seq_env.model = update_model
                 #     self.seq_env.model.eval()
                 #     self.retrain_flag = False
-                if len(self.seq_env.playout_dict) > 4000:
-                    break
                 if self.buffer_no_extend == False and len(
                     self.data_buffer
                 ) >= self.batch_size and (i + 1) != self.game_batch_num:
@@ -330,7 +364,7 @@ class TrainPipeline():
             pathlib.Path('out/PAB1_GFP_task/PAB1/generate'
                         ).mkdir(parents=True, exist_ok=True)
             df_m_p.to_csv(
-                "out/PAB1_GFP_task/PAB1/generate/evoplay_pab1_generated_sequence.csv",
+                "out/PAB1_GFP_task/PAB1/generate/evoplay_pab1_generated_sequence_esm_5.csv",
                 index=False
             )
             endtime = datetime.datetime.now()
@@ -341,11 +375,15 @@ class TrainPipeline():
 
 if __name__ == '__main__':
     starttime = datetime.datetime.now()
-    model = train_surrogate_predictor(data_path, retrain=False)
+    feature_extractor = FeatureExtracter().eval().cuda()
+    model = train_surrogate_predictor(
+        data_path, feature_extractor, retrain=False
+    )
     training_pipeline = TrainPipeline(
         starts["start_seq"],
         AAS,
         model,
+        feature_extractor,
         trust_radius=100,
     )
     training_pipeline.run()

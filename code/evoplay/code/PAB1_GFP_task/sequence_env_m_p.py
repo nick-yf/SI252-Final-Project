@@ -111,9 +111,10 @@ class Seq_env(object):
         one_hots = one_hots.to(torch.float32)
         with torch.no_grad():
             inputs = one_hots
-            inputs = inputs.permute(0, 2, 1)
-
-            features = self.feature_extractor(inputs.cuda()).mean(1)
+            if self.feature_extractor is None:
+                features = inputs.permute(0, 2, 1).cuda()
+            else:
+                features = self.feature_extractor(inputs.cuda()).mean(1)
             outputs = self.model(features)
 
             outputs = outputs.squeeze()
@@ -178,9 +179,11 @@ class Seq_env(object):
                     one_hots = one_hots.to(torch.float32)
                     with torch.no_grad():
                         inputs = one_hots
-                        inputs = inputs.permute(0, 2, 1)
-
-                        features = self.feature_extractor(inputs.cuda()).mean(1)
+                        if self.feature_extractor is None:
+                            features = inputs.permute(0, 2, 1).cuda()
+                        else:
+                            features = self.feature_extractor(inputs.cuda()
+                                                             ).mean(1)
                         outputs = self.model(features)
                         outputs = outputs.squeeze()
                     if outputs:
@@ -196,9 +199,11 @@ class Seq_env(object):
                     one_hots = one_hots.to(torch.float32)
                     with torch.no_grad():
                         inputs = one_hots
-                        inputs = inputs.permute(0, 2, 1)
-
-                        features = self.feature_extractor(inputs.cuda()).mean(1)
+                        if self.feature_extractor is None:
+                            features = inputs.permute(0, 2, 1).cuda()
+                        else:
+                            features = self.feature_extractor(inputs.cuda()
+                                                             ).mean(1)
                         outputs = self.model(features)
 
                         outputs = outputs.squeeze()

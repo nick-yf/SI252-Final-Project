@@ -14,9 +14,9 @@ model = tape.ProteinBertForValuePrediction.from_pretrained(
 
 seqs = []
 all_score = []
-gen_path = pathlib.Path('out/PAB1_GFP_task/generate')
-eval_path = pathlib.Path('out/PAB1_GFP_task/evaluate')
-file_name = 'evoplay_pab1_generated_sequence_esm_3.csv'
+gen_path = pathlib.Path('out/PAB1_GFP_task/PAB1/generate')
+eval_path = pathlib.Path('out/PAB1_GFP_task/PAB1/evaluate')
+file_name = 'evoplay_pab1_generated_sequence.csv'
 
 if not (gen_path / file_name).exists():
     print("file not exist")
